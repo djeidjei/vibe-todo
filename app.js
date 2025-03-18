@@ -250,6 +250,28 @@ async function listTasks() {
     }
 }
 
+function calculateTotalLines(tasks) {
+    let lines = 3; // For "Latest 5 Tasks:" + 2 blank lines
+    lines += Math.min(tasks.length, 5); // Latest 5 tasks
+
+    const hashtagMap = {};
+    tasks.forEach(task => {
+        const hashtags = (task.text.match(/#\w+/g) || ['#none']);
+        hashtags.forEach(hashtag => {
+            if (!hashtagMap[hashtag]) hashtagMap[hashtag] = [];
+            hashtagMap[hashtag].push(task);
+        });
+    });
+
+    lines += 2; // "All Tasks by Hashtag:" + blank line
+    Object.keys(hashtagMap).forEach(hashtag => {
+        lines += 1; // Hashtag title
+        lines += hashtagMap[hashtag].length; // Tasks under hashtag
+    });
+    lines += 2; // Final blank lines + prompt
+    return lines;
+}
+
 async function listTasksByHashtag(hashtag) {
     try {
         const q = query(collection(db, `users/${currentUser.uid}/tasks`), orderBy('createdAt', 'desc'));
