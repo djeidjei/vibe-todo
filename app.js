@@ -1,6 +1,7 @@
 // Import Firebase as modules
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js';
 import { getFirestore, collection, addDoc, getDocs, orderBy, query, where, deleteDoc, doc, writeBatch, updateDoc } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -15,30 +16,43 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
 
 // Set up the terminal with dynamic sizing
 const isMobile = window.innerWidth <= 768;
-const cols = isMobile ? Math.floor(window.innerWidth / 10) : 80; // Adjust columns for mobile
-const rows = isMobile ? Math.floor(window.innerHeight / 20) : 24; // Adjust rows for mobile
+const cols = isMobile ? Math.floor(window.innerWidth / 10) : 80;
+const rows = isMobile ? Math.floor(window.innerHeight / 20) : 24;
 const term = new Terminal({ 
     cursorBlink: true, 
     cols: cols, 
     rows: rows, 
     scrollback: 0,
-    fontSize: isMobile ? 16 : 12 // Larger font on mobile
+    fontSize: isMobile ? 16 : 12
 });
 term.open(document.getElementById('terminal'));
-term.write('Welcome to your Vibe To-Do App! v0.1.0\r\nTop Commands:\r\n  add <task> - Add a task\r\n  show all - List all tasks\r\n  help - See all commands\r\n\r\n> ');
 
 // Handle user input
 let input = '';
 let awaitingConfirmation = false;
 let pendingCommand = null;
+let currentUser = null;
 
 const validCommands = [
     'show me my todos', 'show all', 'add', 'show #', 'clear all', 'clear completed',
-    'delete', 'complete', 'edit', 'show done', 'show not done', 'help', 'clear', '+', 'list'
+    'delete', 'complete', 'edit', 'show done', 'show not done', 'help', 'clear', '+', 
+    'list', 'signup', 'signin', 'signout'
 ];
+
+// Check auth state and update welcome message
+onAuthStateChanged(auth, (user) => {
+    currentUser = user;
+    term.clear();
+    if (user) {
+        term.write(`Welcome back, ${user.email}! v0.1.0\r\nTop Commands:\r\n  add <task> - Add a task\r\n  show all - List all tasks\r\n  help - See all commands\r\n\r\n> `);
+    } else {
+        term.write('Welcome to your Vibe To-Do App! v0.1.0\r\nPlease sign in or sign up:\r\n  signup <email> <password>\r\n  signin <email> <password>\r\n\r\n> ');
+    }
+});
 
 term.onData(data => {
     if (awaitingConfirmation) {
@@ -88,21 +102,32 @@ async function processCommand(command) {
     const fullCommand = command.toLowerCase();
     const parts = command.trim().split(' ');
     const cmd = parts[0].toLowerCase();
-    const taskText = parts.slice(1).join(' ');
+    const args = parts.slice(1).join(' ');
     const isValidCommand = validCommands.includes(fullCommand) || validCommands.some(c => fullCommand.startsWith(c + ' ') || c === cmd);
-    const commandColor = isValidCommand ? '\x1b[35m' : '\x1b[37m'; // Purple for valid, white for invalid
+    const commandColor = isValidCommand ? '\x1b[35m' : '\x1b[37m';
 
-    // Color the command and task separately
-    let coloredCommand = `${commandColor}${cmd}\x1b[37m${taskText ? ' ' + colorHashtags(taskText) : ''}\x1b[0m`;
+    let coloredCommand = `${commandColor}${cmd}\x1b[37m${args ? ' ' + colorHashtags(args) : ''}\x1b[0m`;
     term.write('\r\n\r\n' + coloredCommand + '\r\n');
 
-    if (fullCommand === 'show me my todos' || fullCommand === 'show all' || fullCommand === 'list') {
+    if (cmd === 'signup') {
+        const [email, password] = args.split(' ');
+        if (email && password) await signUp(email, password);
+        else term.write('\r\n\r\nUsage: signup <email> <password>\r\n\r\n> ');
+    } else if (cmd === 'signin') {
+        const [email, password] = args.split(' ');
+        if (email && password) await signIn(email, password);
+        else term.write('\r\n\r\nUsage: signin <email> <password>\r\n\r\n> ');
+    } else if (cmd === 'signout') {
+        await signOutUser();
+    } else if (!currentUser) {
+        term.write('\r\n\r\nPlease sign in or sign up first!\r\n\r\n> ');
+    } else if (fullCommand === 'show me my todos' || fullCommand === 'show all' || fullCommand === 'list') {
         await listTasks();
     } else if (cmd === 'add' || cmd === '+') {
         const task = command.slice(cmd === 'add' ? 4 : 2).trim();
         if (task) await addTask(task);
     } else if (fullCommand.startsWith('show #')) {
-        const hashtag = taskText.slice(1).trim().replace(/^#+/, '');
+        const hashtag = args.slice(1).trim().replace(/^#+/, '');
         if (hashtag) await listTasksByHashtag(hashtag);
     } else if (fullCommand === 'clear all') {
         term.write('\r\nAre you sure you want to delete all tasks? (Y/N): ');
@@ -113,13 +138,13 @@ async function processCommand(command) {
         awaitingConfirmation = true;
         pendingCommand = 'clear completed';
     } else if (cmd === 'delete') {
-        const task = taskText.trim();
+        const task = args.trim();
         if (task) await deleteTask(task);
     } else if (cmd === 'complete') {
-        const task = taskText.trim();
+        const task = args.trim();
         if (task) await completeTask(task);
     } else if (cmd === 'edit') {
-        const parts = taskText.split(' to ');
+        const parts = args.split(' to ');
         if (parts.length === 2) {
             const oldTask = parts[0].trim();
             const newTask = parts[1].trim();
@@ -133,7 +158,7 @@ async function processCommand(command) {
         await listTasksByStatus(false);
     } else if (cmd === 'help') {
         showHelp();
-    } else if (cmd === 'clear' && !taskText) {
+    } else if (cmd === 'clear' && !args) {
         term.clear();
         term.write('\r\n\r\n> ');
     } else {
@@ -141,20 +166,47 @@ async function processCommand(command) {
     }
 }
 
-// Add a task to Firestore
+// Authentication functions
+async function signUp(email, password) {
+    try {
+        await createUserWithEmailAndPassword(auth, email, password);
+        term.write('\r\n\r\nSigned up successfully! You are now signed in.\r\n\r\n> ');
+    } catch (error) {
+        term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
+    }
+}
+
+async function signIn(email, password) {
+    try {
+        await signInWithEmailAndPassword(auth, email, password);
+        term.write('\r\n\r\nSigned in successfully!\r\n\r\n> ');
+    } catch (error) {
+        term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
+    }
+}
+
+async function signOutUser() {
+    try {
+        await signOut(auth);
+        term.write('\r\n\r\nSigned out successfully!\r\n\r\n> ');
+    } catch (error) {
+        term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
+    }
+}
+
+// User-specific Firestore functions
 async function addTask(task) {
     try {
-        await addDoc(collection(db, 'tasks'), { text: task, createdAt: new Date(), completed: false });
+        await addDoc(collection(db, `users/${currentUser.uid}/tasks`), { text: task, createdAt: new Date(), completed: false });
         term.write('\r\n\r\nAdded: ' + task + '\r\n\r\n> ');
     } catch (error) {
         term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
     }
 }
 
-// List all tasks (top 5 latest without hashtags, then by hashtag with colored titles)
 async function listTasks() {
     try {
-        const q = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
+        const q = query(collection(db, `users/${currentUser.uid}/tasks`), orderBy('createdAt', 'desc'));
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
             term.write('\r\n\r\nNo tasks yet.\r\n\r\n> ');
@@ -198,33 +250,9 @@ async function listTasks() {
     }
 }
 
-// Calculate total lines needed for display
-function calculateTotalLines(tasks) {
-    let lines = 3; // For "Latest 5 Tasks:" + 2 blank lines
-    lines += Math.min(tasks.length, 5); // Latest 5 tasks
-
-    const hashtagMap = {};
-    tasks.forEach(task => {
-        const hashtags = (task.text.match(/#\w+/g) || ['#none']);
-        hashtags.forEach(hashtag => {
-            if (!hashtagMap[hashtag]) hashtagMap[hashtag] = [];
-            hashtagMap[hashtag].push(task);
-        });
-    });
-
-    lines += 2; // "All Tasks by Hashtag:" + blank line
-    Object.keys(hashtagMap).forEach(hashtag => {
-        lines += 1; // Hashtag title
-        lines += hashtagMap[hashtag].length; // Tasks under hashtag
-    });
-    lines += 2; // Final blank lines + prompt
-    return lines;
-}
-
-// List tasks by hashtag
 async function listTasksByHashtag(hashtag) {
     try {
-        const q = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
+        const q = query(collection(db, `users/${currentUser.uid}/tasks`), orderBy('createdAt', 'desc'));
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
             term.write('\r\n\r\nNo tasks with #' + hashtag + ' yet.\r\n\r\n> ');
@@ -232,7 +260,7 @@ async function listTasksByHashtag(hashtag) {
         }
 
         const tasks = snapshot.docs.map(doc => doc.data()).filter(task => task.text.includes('#' + hashtag));
-        const totalLines = tasks.length + 4; // Title + tasks + 3 blank lines + prompt
+        const totalLines = tasks.length + 4;
         term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
         term.write('\r\n\r\n');
@@ -257,10 +285,9 @@ async function listTasksByHashtag(hashtag) {
     }
 }
 
-// Complete a task
 async function completeTask(taskText) {
     try {
-        const q = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
+        const q = query(collection(db, `users/${currentUser.uid}/tasks`), orderBy('createdAt', 'desc'));
         const snapshot = await getDocs(q);
         let foundTask = null;
         snapshot.forEach(doc => {
@@ -273,34 +300,32 @@ async function completeTask(taskText) {
             term.write('\r\n\r\nTask containing "' + taskText + '" not found.\r\n\r\n> ');
             return;
         }
-        await updateDoc(doc(db, 'tasks', foundTask.id), { completed: true });
+        await updateDoc(doc(db, `users/${currentUser.uid}/tasks`, foundTask.id), { completed: true });
         term.write('\r\n\r\nCompleted: ' + foundTask.data().text + '\r\n\r\n> ');
     } catch (error) {
         term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
     }
 }
 
-// Edit a task
 async function editTask(oldTask, newTask) {
     try {
-        const q = query(collection(db, 'tasks'), where('text', '==', oldTask));
+        const q = query(collection(db, `users/${currentUser.uid}/tasks`), where('text', '==', oldTask));
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
             term.write('\r\n\r\nTask "' + oldTask + '" not found.\r\n\r\n> ');
             return;
         }
         const taskDoc = snapshot.docs[0];
-        await updateDoc(doc(db, 'tasks', taskDoc.id), { text: newTask, createdAt: new Date() });
+        await updateDoc(doc(db, `users/${currentUser.uid}/tasks`, taskDoc.id), { text: newTask, createdAt: new Date() });
         term.write('\r\n\r\nEdited: "' + oldTask + '" to "' + newTask + '"\r\n\r\n> ');
     } catch (error) {
         term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
     }
 }
 
-// Clear completed tasks
 async function clearCompletedTasks() {
     try {
-        const q = query(collection(db, 'tasks'), where('completed', '==', true));
+        const q = query(collection(db, `users/${currentUser.uid}/tasks`), where('completed', '==', true));
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
             term.write('\r\n\r\nNo completed tasks to delete.\r\n\r\n> ');
@@ -317,10 +342,9 @@ async function clearCompletedTasks() {
     }
 }
 
-// List tasks by completion status
 async function listTasksByStatus(completed) {
     try {
-        const q = query(collection(db, 'tasks'), where('completed', '==', completed), orderBy('createdAt', 'desc'));
+        const q = query(collection(db, `users/${currentUser.uid}/tasks`), where('completed', '==', completed), orderBy('createdAt', 'desc'));
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
             term.write('\r\n\r\nNo ' + (completed ? 'completed' : 'incomplete') + ' tasks yet.\r\n\r\n> ');
@@ -328,7 +352,7 @@ async function listTasksByStatus(completed) {
         }
 
         const tasks = snapshot.docs.map(doc => doc.data());
-        const totalLines = tasks.length + 4; // 3 blank lines + prompt + tasks
+        const totalLines = tasks.length + 4;
         term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
         snapshot.forEach((doc, index) => {
@@ -343,10 +367,9 @@ async function listTasksByStatus(completed) {
     }
 }
 
-// Delete all tasks
 async function deleteAllTasks() {
     try {
-        const q = query(collection(db, 'tasks'));
+        const q = query(collection(db, `users/${currentUser.uid}/tasks`));
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
             term.write('\r\n\r\nNo tasks to delete.\r\n\r\n> ');
@@ -363,10 +386,9 @@ async function deleteAllTasks() {
     }
 }
 
-// Delete a specific task
 async function deleteTask(taskText) {
     try {
-        const q = query(collection(db, 'tasks'), where('text', '==', taskText));
+        const q = query(collection(db, `users/${currentUser.uid}/tasks`), where('text', '==', taskText));
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
             term.write('\r\n\r\nTask "' + taskText + '" not found.\r\n\r\n> ');
@@ -383,6 +405,9 @@ async function deleteTask(taskText) {
 // Show help with all commands
 function showHelp() {
     term.write('\r\n\r\nAvailable commands:\r\n');
+    term.write('  signup <email> <password> - Create a new account\r\n');
+    term.write('  signin <email> <password> - Sign in to your account\r\n');
+    term.write('  signout             - Sign out of your account\r\n');
     term.write('  add <task>          - Add a new task (e.g., "add call mom #home")\r\n');
     term.write('  show all            - List top 5 latest tasks, then all by hashtag\r\n');
     term.write('  show me my todos    - Alias for "show all"\r\n');
