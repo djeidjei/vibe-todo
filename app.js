@@ -16,8 +16,17 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// Set up the terminal
-const term = new Terminal({ cursorBlink: true, cols: 80, rows: 24, scrollback: 0 });
+// Set up the terminal with dynamic sizing
+const isMobile = window.innerWidth <= 768;
+const cols = isMobile ? Math.floor(window.innerWidth / 10) : 80; // Adjust columns for mobile
+const rows = isMobile ? Math.floor(window.innerHeight / 20) : 24; // Adjust rows for mobile
+const term = new Terminal({ 
+    cursorBlink: true, 
+    cols: cols, 
+    rows: rows, 
+    scrollback: 0,
+    fontSize: isMobile ? 16 : 12 // Larger font on mobile
+});
 term.open(document.getElementById('terminal'));
 term.write('Welcome to your Vibe To-Do App! v0.1.0\r\nTop Commands:\r\n  add <task> - Add a task\r\n  show all - List all tasks\r\n  help - See all commands\r\n\r\n> ');
 
@@ -154,7 +163,7 @@ async function listTasks() {
 
         const allTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         const totalLines = calculateTotalLines(allTasks);
-        term.resize(80, Math.max(24, totalLines));
+        term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
         term.write('\r\n\r\nLatest 5 Tasks:\r\n');
         const latestTasks = allTasks.slice(0, 5);
@@ -224,7 +233,7 @@ async function listTasksByHashtag(hashtag) {
 
         const tasks = snapshot.docs.map(doc => doc.data()).filter(task => task.text.includes('#' + hashtag));
         const totalLines = tasks.length + 4; // Title + tasks + 3 blank lines + prompt
-        term.resize(80, Math.max(24, totalLines));
+        term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
         term.write('\r\n\r\n');
         const coloredHashtag = colorHashtags('#' + hashtag);
@@ -320,7 +329,7 @@ async function listTasksByStatus(completed) {
 
         const tasks = snapshot.docs.map(doc => doc.data());
         const totalLines = tasks.length + 4; // 3 blank lines + prompt + tasks
-        term.resize(80, Math.max(24, totalLines));
+        term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
         snapshot.forEach((doc, index) => {
             const task = doc.data();
