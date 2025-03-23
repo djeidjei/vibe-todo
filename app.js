@@ -501,7 +501,7 @@ function showHelp() {
     term.write('  list                - List incomplete tasks\r\n');
     term.write('  list all            - List all tasks, including completed\r\n');
     term.write('  show #hashtag       - List tasks with a specific hashtag\r\n');
-    term the.write('  show hashtags       - List all available hashtags\r\n');
+    term.write('  show hashtags       - List all available hashtags\r\n');
     term.write('  show done           - List completed tasks\r\n');
     term.write('  show not done       - List incomplete tasks\r\n');
     term.write('  complete <number>   - Mark a task as completed by its number (e.g., "complete 1")\r\n');
