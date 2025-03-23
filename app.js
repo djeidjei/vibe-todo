@@ -40,7 +40,7 @@ let historyIndex = -1;
 const validCommands = [
     'show me my todos', 'show all', 'add', 'show #', 'clear all', 'clear completed',
     'delete', 'complete', 'edit', 'show done', 'show not done', 'help', 'clear', '+',
-    'list', 'list all', 'signup', 'signin', 'signout', 'show hashtags'
+    'list', 'list all', 'signup', 'signin', 'signout', 'show hashtags', 'feedback'
 ];
 
 // Auth state
@@ -75,7 +75,7 @@ term.onData(data => {
     } else {
         if (data === '\r') {
             if (input.trim()) commandHistory.unshift(input.trim());
-            if (commandHistory.length > 10) commandHistory.pop(); // Limit history to 10
+            if (commandHistory.length > 10) commandHistory.pop();
             historyIndex = -1;
             processCommand(input.trim());
             input = '';
@@ -84,7 +84,7 @@ term.onData(data => {
                 input = input.slice(0, -1);
                 term.write('\b \b');
             }
-        } else if (data === '\u001b[A') { // Up arrow
+        } else if (data === '\u001b[A') {
             if (commandHistory.length > 0) {
                 if (historyIndex < commandHistory.length - 1) historyIndex++;
                 input = commandHistory[historyIndex];
@@ -129,9 +129,9 @@ async function processCommand(command) {
     } else if (!currentUser) {
         term.write('\r\n\r\nPlease sign in or sign up first!\r\n\r\n> ');
     } else if (fullCommand === 'show me my todos' || fullCommand === 'show all' || fullCommand === 'list all') {
-        await listTasks(true); // Show all tasks
+        await listTasks(true);
     } else if (fullCommand === 'list') {
-        await listTasks(false); // Show only incomplete tasks
+        await listTasks(false);
     } else if (cmd === 'add' || cmd === '+') {
         const task = command.slice(cmd === 'add' ? 4 : 2).trim();
         if (task) await addTask(task);
@@ -167,6 +167,10 @@ async function processCommand(command) {
         await listTasksByStatus(false);
     } else if (fullCommand === 'show hashtags') {
         await showHashtags();
+    } else if (cmd === 'feedback') {
+        const message = args.trim();
+        if (message) await sendFeedback(message);
+        else term.write('\r\n\r\nUsage: feedback <message>\r\n\r\n> ');
     } else if (cmd === 'help') {
         showHelp();
     } else if (cmd === 'clear' && !args) {
@@ -474,6 +478,20 @@ async function showHashtags() {
     }
 }
 
+async function sendFeedback(message) {
+    try {
+        await addDoc(collection(db, `feedback`), {
+            userId: currentUser.uid,
+            email: currentUser.email,
+            message: message,
+            timestamp: new Date()
+        });
+        term.write('\r\n\r\nFeedback sent successfully!\r\n\r\n> ');
+    } catch (error) {
+        term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
+    }
+}
+
 function showHelp() {
     term.write('\r\n\r\nAvailable commands:\r\n');
     term.write('  signup <email> <password> - Create a new account\r\n');
@@ -483,7 +501,7 @@ function showHelp() {
     term.write('  list                - List incomplete tasks\r\n');
     term.write('  list all            - List all tasks, including completed\r\n');
     term.write('  show #hashtag       - List tasks with a specific hashtag\r\n');
-    term.write('  show hashtags       - List all available hashtags\r\n');
+    term the.write('  show hashtags       - List all available hashtags\r\n');
     term.write('  show done           - List completed tasks\r\n');
     term.write('  show not done       - List incomplete tasks\r\n');
     term.write('  complete <number>   - Mark a task as completed by its number (e.g., "complete 1")\r\n');
@@ -492,6 +510,7 @@ function showHelp() {
     term.write('  clear all           - Delete all tasks (requires Y/N confirmation)\r\n');
     term.write('  clear completed     - Hide all completed tasks (requires Y/N confirmation)\r\n');
     term.write('  clear               - Clear the terminal screen\r\n');
+    term.write('  feedback <message>  - Send feedback about the app\r\n');
     term.write('  help                - Show this help message\r\n');
     term.write('\r\n> ');
 }
