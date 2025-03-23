@@ -363,25 +363,26 @@ async function clearCompletedTasks() {
 
 async function listTasksByStatus(completed) {
     try {
-        const q = query(collection(db, `users/${currentUser.uid}/tasks`), where('completed', '==', completed), orderBy('createdAt', 'desc'));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) {
+        const allQuery = query(collection(db, `users/${currentUser.uid}/tasks`), orderBy('createdAt', 'desc'));
+        const allSnapshot = await getDocs(allQuery);
+        const allTasks = allSnapshot.docs.map((doc, index) => ({ id: doc.id, number: index + 1, ...doc.data() }));
+
+        const tasks = allTasks.filter(task => task.completed === completed);
+        if (tasks.length === 0) {
             term.write('\r\n\r\nNo ' + (completed ? 'completed' : 'incomplete') + ' tasks yet.\r\n\r\n> ');
             return;
         }
 
-        const tasks = snapshot.docs.map((doc, index) => ({ id: doc.id, number: index + 1, ...doc.data() }));
         const totalLines = tasks.length + 4;
         term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
-        snapshot.forEach((doc, index) => {
-            const task = doc.data();
+        tasks.forEach(task => {
             const status = task.completed ? '[x]' : '[ ]';
-            term.write(' ' + (index + 1).toString().padStart(2, ' ') + '. ' + status + ' ' + task.text + '\r\n');
+            term.write(' ' + task.number.toString().padStart(2, ' ') + '. ' + status + ' ' + task.text + '\r\n');
         });
         term.write('\r\n> ');
     } catch (error) {
-        term.write('\r\n\r\nError: ' + error.message + '\r\nYou may need to create a composite index in Firebase Console for "completed" and "createdAt".\r\n\r\n> ');
+        term.write('\r\n\r\nError: ' + error.message + '\r\nCreate this index in Firebase Console: https://console.firebase.google.com/project/vibetodo-2f6e0/firestore/indexes\r\n\r\n> ');
     }
 }
 
