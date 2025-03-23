@@ -2,6 +2,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js';
 import { getFirestore, collection, addDoc, getDocs, orderBy, query, where, deleteDoc, doc, writeBatch, updateDoc } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js';
+import { Terminal } from 'xterm';
 
 // Your Firebase configuration
 const firebaseConfig = {
@@ -48,7 +49,7 @@ onAuthStateChanged(auth, (user) => {
     currentUser = user;
     term.clear();
     if (user) {
-        term.write(`Welcome back, ${user.email}! v0.1.0\r\nTop Commands:\r\n  add <task> - Add a task\r\n  show all - List all tasks\r\n  help - See all commands\r\n\r\n> `);
+        term.write(`Welcome back, ${user.email}! v0.1.0\r\nTop Commands:\r\n  add <task> - Add a task\r\n  list - List all tasks\r\n  complete <number> - Complete a task by its number\r\n  help - See all commands\r\n\r\n> `);
     } else {
         term.write('Welcome to your Vibe To-Do App! v0.1.0\r\nPlease sign in or sign up:\r\n  signup <email> <password>\r\n  signin <email> <password>\r\n\r\n> ');
     }
@@ -141,8 +142,8 @@ async function processCommand(command) {
         const task = args.trim();
         if (task) await deleteTask(task);
     } else if (cmd === 'complete') {
-        const task = args.trim();
-        if (task) await completeTask(task);
+        const taskInput = args.trim();
+        if (taskInput) await completeTask(taskInput);
     } else if (cmd === 'edit') {
         const parts = args.split(' to ');
         if (parts.length === 2) {
@@ -213,19 +214,18 @@ async function listTasks() {
             return;
         }
 
-        const allTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const allTasks = snapshot.docs.map((doc, index) => ({ id: doc.id, number: index + 1, ...doc.data() }));
         const totalLines = calculateTotalLines(allTasks);
         term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
         term.write('\r\n\r\nLatest 5 Tasks:\r\n');
         const latestTasks = allTasks.slice(0, 5);
-        latestTasks.forEach((task, index) => {
-            const plainTask = task.text.replace(/#\w+/g, '').trim();
+        latestTasks.forEach(task => {
             const status = task.completed ? '[x]' : '[ ]';
-            term.write(' ' + (index + 1).toString().padStart(2, ' ') + '. ' + status + ' ' + plainTask + '\r\n');
+            term.write(' ' + task.number.toString().padStart(2, ' ') + '. ' + status + ' ' + task.text + '\r\n');
         });
 
-        term.write('\r\nAll Tasks by Hashtag:\r\n');
+        term.write('\r\nTasks by Hashtag:\r\n');
         const hashtagMap = {};
         allTasks.forEach(task => {
             const hashtags = (task.text.match(/#\w+/g) || ['#none']);
@@ -238,10 +238,9 @@ async function listTasks() {
         Object.keys(hashtagMap).sort().forEach(hashtag => {
             const coloredHashtag = colorHashtags(hashtag);
             term.write(' ' + coloredHashtag + ':\r\n');
-            hashtagMap[hashtag].forEach((task, index) => {
-                const plainTask = task.text.replace(/#\w+/g, '').trim();
+            hashtagMap[hashtag].forEach(task => {
                 const status = task.completed ? '[x]' : '[ ]';
-                term.write('   ' + (index + 1).toString().padStart(2, ' ') + '. ' + status + ' ' + plainTask + '\r\n');
+                term.write('   ' + task.number.toString().padStart(2, ' ') + '. ' + status + ' ' + task.text + '\r\n');
             });
         });
         term.write('\r\n> ');
@@ -263,7 +262,7 @@ function calculateTotalLines(tasks) {
         });
     });
 
-    lines += 2; // "All Tasks by Hashtag:" + blank line
+    lines += 2; // "Tasks by Hashtag:" + blank line
     Object.keys(hashtagMap).forEach(hashtag => {
         lines += 1; // Hashtag title
         lines += hashtagMap[hashtag].length; // Tasks under hashtag
@@ -281,24 +280,19 @@ async function listTasksByHashtag(hashtag) {
             return;
         }
 
-        const tasks = snapshot.docs.map(doc => doc.data()).filter(task => task.text.includes('#' + hashtag));
+        const allTasks = snapshot.docs.map((doc, index) => ({ id: doc.id, number: index + 1, ...doc.data() }));
+        const tasks = allTasks.filter(task => task.text.includes('#' + hashtag));
         const totalLines = tasks.length + 4;
         term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
         term.write('\r\n\r\n');
         const coloredHashtag = colorHashtags('#' + hashtag);
         term.write(coloredHashtag + ':\r\n');
-        let index = 1;
         let found = false;
-        snapshot.forEach(doc => {
-            const task = doc.data();
-            if (task.text.includes('#' + hashtag)) {
-                const plainTask = task.text.replace(/#\w+/g, '').trim();
-                const status = task.completed ? '[x]' : '[ ]';
-                term.write('  ' + (index).toString().padStart(2, ' ') + '. ' + status + ' ' + plainTask + '\r\n');
-                index++;
-                found = true;
-            }
+        tasks.forEach(task => {
+            const status = task.completed ? '[x]' : '[ ]';
+            term.write('  ' + task.number.toString().padStart(2, ' ') + '. ' + status + ' ' + task.text + '\r\n');
+            found = true;
         });
         if (!found) term.write('No tasks with #' + hashtag + ' found.\r\n');
         term.write('\r\n> ');
@@ -307,23 +301,36 @@ async function listTasksByHashtag(hashtag) {
     }
 }
 
-async function completeTask(taskText) {
+async function completeTask(taskInput) {
     try {
         const q = query(collection(db, `users/${currentUser.uid}/tasks`), orderBy('createdAt', 'desc'));
         const snapshot = await getDocs(q);
-        let foundTask = null;
-        snapshot.forEach(doc => {
-            const task = doc.data();
-            if (task.text.includes(taskText)) {
-                foundTask = doc; // Take the first match
-            }
-        });
-        if (!foundTask) {
-            term.write('\r\n\r\nTask containing "' + taskText + '" not found.\r\n\r\n> ');
+        const allTasks = snapshot.docs.map((doc, index) => ({ id: doc.id, number: index + 1, ...doc.data() }));
+
+        if (!allTasks.length) {
+            term.write('\r\n\r\nNo tasks to complete.\r\n\r\n> ');
             return;
         }
-        await updateDoc(doc(db, `users/${currentUser.uid}/tasks`, foundTask.id), { completed: true });
-        term.write('\r\n\r\nCompleted: ' + foundTask.data().text + '\r\n\r\n> ');
+
+        const taskNumber = parseInt(taskInput, 10);
+        if (!isNaN(taskNumber) && taskNumber > 0 && taskNumber <= allTasks.length) {
+            const taskToComplete = allTasks[taskNumber - 1];
+            await updateDoc(doc(db, `users/${currentUser.uid}/tasks`, taskToComplete.id), { completed: true });
+            term.write('\r\n\r\nCompleted: ' + taskToComplete.text + '\r\n\r\n> ');
+        } else {
+            let foundTask = null;
+            allTasks.forEach(task => {
+                if (task.text.includes(taskInput)) {
+                    foundTask = task;
+                }
+            });
+            if (!foundTask) {
+                term.write('\r\n\r\nTask "' + taskInput + '" not found. Use a number (e.g., "complete 1") or part of the task text.\r\n\r\n> ');
+                return;
+            }
+            await updateDoc(doc(db, `users/${currentUser.uid}/tasks`, foundTask.id), { completed: true });
+            term.write('\r\n\r\nCompleted: ' + foundTask.text + '\r\n\r\n> ');
+        }
     } catch (error) {
         term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
     }
@@ -373,15 +380,14 @@ async function listTasksByStatus(completed) {
             return;
         }
 
-        const tasks = snapshot.docs.map(doc => doc.data());
+        const tasks = snapshot.docs.map((doc, index) => ({ id: doc.id, number: index + 1, ...doc.data() }));
         const totalLines = tasks.length + 4;
         term.resize(80, Math.max(isMobile ? rows : 24, totalLines));
 
         snapshot.forEach((doc, index) => {
             const task = doc.data();
-            const plainTask = task.text.replace(/#\w+/g, '').trim();
             const status = task.completed ? '[x]' : '[ ]';
-            term.write(' ' + (index + 1).toString().padStart(2, ' ') + '. ' + status + ' ' + plainTask + '\r\n');
+            term.write(' ' + (index + 1).toString().padStart(2, ' ') + '. ' + status + ' ' + task.text + '\r\n');
         });
         term.write('\r\n> ');
     } catch (error) {
@@ -437,7 +443,7 @@ function showHelp() {
     term.write('  show #hashtag       - List tasks with a specific hashtag\r\n');
     term.write('  show done           - List completed tasks\r\n');
     term.write('  show not done       - List incomplete tasks\r\n');
-    term.write('  complete <task>     - Mark a task as completed (matches partial text)\r\n');
+    term.write('  complete <number>   - Mark a task as completed by its number (e.g., "complete 1")\r\n');
     term.write('  edit <task> to <new text> - Edit a task\'s text\r\n');
     term.write('  delete <task>       - Delete a specific task\r\n');
     term.write('  clear all           - Delete all tasks (requires Y/N confirmation)\r\n');
