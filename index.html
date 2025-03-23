@@ -4,33 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vibe To-Do</title>
-    <link href="https://unpkg.com/xterm/css/xterm.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/xterm/css/xterm.css" />
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            height: 100vh;
-            width: 100vw;
-            overflow: hidden;
-            background: black;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        #terminal {
-            width: 100%;
-            height: 100%;
-        }
-        @media (max-width: 768px) {
-            .xterm {
-                font-size: 16px !important;
-            }
-        }
+        body { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; background: black; display: flex; justify-content: center; align-items: center; }
+        #terminal { width: 100%; height: 100%; }
+        @media (max-width: 768px) { .xterm { font-size: 16px !important; } }
     </style>
 </head>
 <body>
     <div id="terminal"></div>
     <script src="https://unpkg.com/xterm/lib/xterm.js"></script>
+    <script type="module" src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js"></script>
+    <script type="module" src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js"></script>
+    <script type="module" src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js"></script>
     <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -1,10 +1,8 @@
-// Import Firebase as modules
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js';
 import { getFirestore, collection, addDoc, getDocs, orderBy, query, where, deleteDoc, doc, writeBatch, updateDoc } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js';
-import { Terminal } from 'xterm';
 
-// Your Firebase configuration
+// Firebase config
 const firebaseConfig = {
     apiKey: "AIzaSyDKGWRRvI60EymsMUvw41f4MPLZ9dbX5tQ",
     authDomain: "vibetodo-2f6e0.firebaseapp.com",
@@ -19,20 +17,19 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Set up the terminal with dynamic sizing
+// Terminal setup
 const isMobile = window.innerWidth <= 768;
 const cols = isMobile ? Math.floor(window.innerWidth / 10) : 80;
 const rows = isMobile ? Math.floor(window.innerHeight / 20) : 24;
-const term = new Terminal({ 
-    cursorBlink: true, 
-    cols: cols, 
-    rows: rows, 
+const term = new window.Terminal({
+    cursorBlink: true,
+    cols: cols,
+    rows: rows,
     scrollback: 0,
     fontSize: isMobile ? 16 : 12
 });
 term.open(document.getElementById('terminal'));
 
-// Handle user input
 let input = '';
 let awaitingConfirmation = false;
 let pendingCommand = null;
@@ -40,29 +37,27 @@ let currentUser = null;
 
 const validCommands = [
     'show me my todos', 'show all', 'add', 'show #', 'clear all', 'clear completed',
-    'delete', 'complete', 'edit', 'show done', 'show not done', 'help', 'clear', '+', 
+    'delete', 'complete', 'edit', 'show done', 'show not done', 'help', 'clear', '+',
     'list', 'signup', 'signin', 'signout'
 ];
 
-// Check auth state and update welcome message
+// Auth state
 onAuthStateChanged(auth, (user) => {
     currentUser = user;
     term.clear();
     if (user) {
-        term.write(`Welcome back, ${user.email}! v0.1.0\r\nTop Commands:\r\n  add <task> - Add a task\r\n  list - List all tasks\r\n  complete <number> - Complete a task by its number\r\n  help - See all commands\r\n\r\n> `);
+        term.write(`Welcome back, ${user.email}! v0.1.0\r\nTop Commands:\r\n  add <task> - Add a task\r\n  list - List all tasks\r\n  complete <number> - Complete a task\r\n  help - See all commands\r\n\r\n> `);
     } else {
         term.write('Welcome to your Vibe To-Do App! v0.1.0\r\nPlease sign in or sign up:\r\n  signup <email> <password>\r\n  signin <email> <password>\r\n\r\n> ');
     }
 });
 
+// Input handling
 term.onData(data => {
     if (awaitingConfirmation) {
         if (data.toLowerCase() === 'y') {
-            if (pendingCommand === 'clear all') {
-                deleteAllTasks();
-            } else if (pendingCommand === 'clear completed') {
-                clearCompletedTasks();
-            }
+            if (pendingCommand === 'clear all') deleteAllTasks();
+            else if (pendingCommand === 'clear completed') clearCompletedTasks();
             awaitingConfirmation = false;
             pendingCommand = null;
             term.write('\r\n\r\n> ');
@@ -76,15 +71,15 @@ term.onData(data => {
             term.write('\r\n\r\nPlease enter Y or N: ');
         }
     } else {
-        if (data === '\r') {  // Enter key
+        if (data === '\r') {
             processCommand(input.trim());
             input = '';
-        } else if (data === '\b' || data.charCodeAt(0) === 127) {  // Backspace or Delete
+        } else if (data === '\b' || data.charCodeAt(0) === 127) {
             if (input.length > 0) {
                 input = input.slice(0, -1);
                 term.write('\b \b');
             }
-        } else if (data >= ' ' && data <= '~') {  // Printable characters only
+        } else if (data >= ' ' && data <= '~') {
             input += data;
             term.write(data);
         }
@@ -93,7 +88,7 @@ term.onData(data => {
 
 // Process commands
 async function processCommand(command) {
-    if (!command) {  // If command is empty, do nothing
+    if (!command) {
         term.clear();
         term.write('\r\n\r\n> ');
         return;
@@ -195,7 +190,7 @@ async function signOutUser() {
     }
 }
 
-// User-specific Firestore functions
+// Task management functions
 async function addTask(task) {
     try {
         await addDoc(collection(db, `users/${currentUser.uid}/tasks`), { text: task, createdAt: new Date(), completed: false });
@@ -252,7 +247,6 @@ async function listTasks() {
 function calculateTotalLines(tasks) {
     let lines = 3; // For "Latest 5 Tasks:" + 2 blank lines
     lines += Math.min(tasks.length, 5); // Latest 5 tasks
-
     const hashtagMap = {};
     tasks.forEach(task => {
         const hashtags = (task.text.match(/#\w+/g) || ['#none']);
@@ -261,7 +255,6 @@ function calculateTotalLines(tasks) {
             hashtagMap[hashtag].push(task);
         });
     });
-
     lines += 2; // "Tasks by Hashtag:" + blank line
     Object.keys(hashtagMap).forEach(hashtag => {
         lines += 1; // Hashtag title
@@ -288,13 +281,10 @@ async function listTasksByHashtag(hashtag) {
         term.write('\r\n\r\n');
         const coloredHashtag = colorHashtags('#' + hashtag);
         term.write(coloredHashtag + ':\r\n');
-        let found = false;
         tasks.forEach(task => {
             const status = task.completed ? '[x]' : '[ ]';
             term.write('  ' + task.number.toString().padStart(2, ' ') + '. ' + status + ' ' + task.text + '\r\n');
-            found = true;
         });
-        if (!found) term.write('No tasks with #' + hashtag + ' found.\r\n');
         term.write('\r\n> ');
     } catch (error) {
         term.write('\r\n\r\nError: ' + error.message + '\r\n\r\n> ');
@@ -430,7 +420,6 @@ async function deleteTask(taskText) {
     }
 }
 
-// Show help with all commands
 function showHelp() {
     term.write('\r\n\r\nAvailable commands:\r\n');
     term.write('  signup <email> <password> - Create a new account\r\n');
@@ -453,7 +442,6 @@ function showHelp() {
     term.write('\r\n> ');
 }
 
-// Color hashtags consistently
 function colorHashtags(task) {
     return task.replace(/#(\w+)/g, (match, hashtag) => {
         const colorCode = hashToColor(hashtag);
@@ -466,5 +454,5 @@ function hashToColor(hashtag) {
     for (let i = 0; i < hashtag.length; i++) {
         hash = hashtag.charCodeAt(i) + ((hash << 5) - hash);
     }
-    return (hash % 256);  // ANSI 256-color code
+    return (hash % 256);
 }
